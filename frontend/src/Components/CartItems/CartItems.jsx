@@ -1,6 +1,9 @@
 import React, { useContext } from "react";
 import { ShopContext } from "../../Context/ShopContext";
 import remove_icon from "../Assets/cart_cross_icon.png";
+import { useNavigate } from "react-router-dom";
+
+
 
 const CartItems = () => {
   const {
@@ -9,6 +12,8 @@ const CartItems = () => {
     removeFromCart,
     getTotalCartAmount,
   } = useContext(ShopContext);
+  const navigate = useNavigate();
+
 
   return (
     <div className="my-24 mx-[10%]">
@@ -87,7 +92,7 @@ const CartItems = () => {
           <p>₹{getTotalCartAmount()}</p>
         </div>
 
-        <button className="mt-5 bg-red-500 text-white w-full py-3 rounded-md font-semibold">
+        <button onClick={() => navigate("/checkout")} className="mt-5 bg-red-500 text-white w-full py-3 rounded-md font-semibold">
           PROCEED TO CHECKOUT
         </button>
       </div>

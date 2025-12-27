@@ -245,11 +245,72 @@ app.get("/product/:id", async (req, res) => {
   }
 });
 
-// React SPA fallback (Express 5 safe)
-app.use((req, res) => {
-  res.sendFile(path.join(__dirname, "dist", "index.html"));
+
+
+/* ================= Order Schema ================= */
+const Order = mongoose.model("Order", {
+  userId: { type: String, required: true },
+
+  items: [
+    {
+      productId: Number,
+      name: String,
+      price: Number,
+      size: String,
+      quantity: Number,
+    },
+  ],
+
+  totalAmount: { type: Number, required: true },
+
+  address: {
+    name: String,
+    phone: String,
+    street: String,
+    city: String,
+    pincode: String,
+  },
+
+  status: { type: String, default: "Placed" }, // Placed, Shipped, Delivered
+  createdAt: { type: Date, default: Date.now },
 });
 
+/* ================= Place Order ================= */
+app.post("/api/placeorder", fetchuser, async (req, res) => {
+  try {
+    const { items, totalAmount, address } = req.body;
+
+    if (!items || items.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Cart is empty" });
+    }
+
+    const newOrder = new Order({
+      userId: req.user.id, // ✅ REAL MongoDB ID
+      items,
+      totalAmount,
+      address,
+    });
+
+    await newOrder.save();
+
+    // Clear cart
+    await Users.findByIdAndUpdate(req.user.id, { cartData: {} });
+
+    res.json({
+      success: true,
+      message: "Order placed successfully",
+      orderId: newOrder._id,
+    });
+  } catch (error) {
+    console.error("❌ Order Error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
 
 /* ================= Server ================= */
 app.listen(port, () => {

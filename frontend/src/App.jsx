@@ -9,6 +9,8 @@ import Product from './Pages/Product';
 import LoginSignup from './Pages/LoginSignup';
 import Cart from './Pages/Cart';
 import ShopCategory from './Pages/ShopCategory';
+import Checkout from "./Pages/Checkout";
+
 
 import Company from './Pages/Company';
 import Products from './Pages/Products';
@@ -90,6 +92,15 @@ function App() {
               </>
             }
           />
+          <Route
+  path="/checkout"
+  element={
+    <>
+      <Checkout />
+      <Footer />
+    </>
+  }
+/>
 
           {/* Pages WITHOUT footer */}
           <Route path="/company" element={<Company />} />
