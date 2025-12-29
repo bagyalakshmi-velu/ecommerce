@@ -6,7 +6,7 @@ const path = require("path");
 const cors = require("cors");
 
 const app = express();
-const port = 4000;
+const port = process.env.PORT || 4000;
 
 /* ================= Middleware ================= */
 app.use(express.json());
@@ -14,9 +14,7 @@ app.use(cors());
 
 /* ================= MongoDB Connection ================= */
 mongoose
-  .connect(
-    "mongodb+srv://bagyaniranjan1326_db_user:14july1988@cluster0.3p8dno1.mongodb.net/ecommerce?retryWrites=true&w=majority"
-  )
+  .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.error("❌ MongoDB Error:", err));
 
@@ -51,7 +49,7 @@ app.post("/upload", upload.single("product"), (req, res) => {
 
   res.json({
     success: true,
-    image_url: `http://localhost:${port}/images/${req.file.filename}`,
+    image_url: `/images/${req.file.filename}`,
   });
 });
 
