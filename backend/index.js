@@ -20,11 +20,29 @@ mongoose
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.error("❌ MongoDB Error:", err));
 
+  // Serve frontend build
+app.use(express.static(path.join(__dirname, "dist")));
+
+
+/* ================= Test API ================= */
 app.get("/", (req, res) => {
   res.send("Express App is Running");
 });
 
+/* ================= Image Upload ================= */
+const storage = multer.diskStorage({
+  destination: "./upload/images",
+  filename: (req, file, cb) => {
+    cb(
+      null,
+      `${file.fieldname}_${Date.now()}${path.extname(file.originalname)}`
+    );
+  },
+});
 
+const upload = multer({ storage });
+
+app.use("/images", express.static("upload/images"));
 
 app.post("/upload", upload.single("product"), (req, res) => {
   if (!req.file) {
@@ -65,9 +83,12 @@ app.post("/addproduct", async (req, res) => {
     });
 
     await newProduct.save();
+    console.log("✅ Product Saved:", newProduct);
+
     res.json({ success: true, id });
   } catch (error) {
-    res.status(500).json({ success: false });
+    console.error("❌ Add Product Error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -96,7 +117,9 @@ const Users = mongoose.model("Users", {
 app.post("/signup", async (req, res) => {
   const check = await Users.findOne({ email: req.body.email });
   if (check) {
-    return res.status(400).json({ success: false });
+    return res
+      .status(400)
+      .json({ success: false, errors: "User already exists" });
   }
 
   let cart = {};
@@ -110,6 +133,7 @@ app.post("/signup", async (req, res) => {
   });
 
   await user.save();
+
   const token = jwt.sign({ user: { id: user._id } }, "secret_ecom");
   res.json({ success: true, token });
 });
@@ -117,8 +141,12 @@ app.post("/signup", async (req, res) => {
 /* ================= Login ================= */
 app.post("/login", async (req, res) => {
   const user = await Users.findOne({ email: req.body.email });
-  if (!user || user.password !== req.body.password) {
-    return res.json({ success: false });
+  if (!user) {
+    return res.json({ success: false, errors: "Wrong Email" });
+  }
+
+  if (req.body.password !== user.password) {
+    return res.json({ success: false, errors: "Wrong Password" });
   }
 
   const token = jwt.sign({ user: { id: user._id } }, "secret_ecom");
@@ -135,6 +163,153 @@ app.get("/newcollections", async (req, res) => {
 app.get("/popularinwomen", async (req, res) => {
   const products = await Product.find({ category: "women" }).limit(4);
   res.json(products);
+});
+
+ //MiddleWare to fetch user from token
+const fetchuser = async (req, res, next) => {
+  const token = req.header("auth-token");
+  if (!token) {
+    res.status(401).send({ errors: "Please authenticate using a valid token" });
+  }
+  try {
+    const data = jwt.verify(token, "secret_ecom");
+    req.user = data.user;
+    next();
+  } catch (error) {
+    res.status(401).send({ errors: "Please authenticate using a valid token" });
+  }
+};
+
+
+/*==================Add in cart data =============== */
+app.post('/addtocart', fetchuser, async (req, res) => {
+  console.log("Add Cart",req.body.itemId);
+  let userData = await Users.findOne({ _id: req.user.id });
+  userData.cartData[req.body.itemId] += 1;
+  await Users.findOneAndUpdate({ _id: req.user.id }, { cartData: userData.cartData });
+  res.send("Added")
+})
+
+
+// Create an endpoint for removing the product in cart
+app.post('/removefromcart', fetchuser, async (req, res) => {
+  console.log("Remove Cart",req.body.itemId);
+  let userData = await Users.findOne({ _id: req.user.id });
+  if (userData.cartData[req.body.itemId] != 0) {
+    userData.cartData[req.body.itemId] -= 1;
+  }
+  await Users.findOneAndUpdate({ _id: req.user.id }, { cartData: userData.cartData });
+  res.send("Removed");
+})
+
+
+//Create an endpoint for getting cartdata of user
+app.post('/getcart', fetchuser, async (req, res) => {
+  console.log("Get Cart");
+  let userData = await Users.findOne({ _id: req.user.id });
+  res.json(userData.cartData);
+
+})
+
+//update
+
+app.post("/updateproduct", async (req, res) => {
+  try {
+    await Product.findOneAndUpdate(
+      { id: req.body.id },
+      {
+        name: req.body.name,
+        image: req.body.image,
+        category: req.body.category,
+        new_price: Number(req.body.new_price),
+        old_price: Number(req.body.old_price),
+      }
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false });
+  }
+});
+
+//get single product
+
+app.get("/product/:id", async (req, res) => {
+  try {
+    const product = await Product.findOne({ id: Number(req.params.id) });
+    if (!product) {
+      return res.status(404).json({ success: false });
+    }
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
+});
+
+
+
+/* ================= Order Schema ================= */
+const Order = mongoose.model("Order", {
+  userId: { type: String, required: true },
+
+  items: [
+    {
+      productId: Number,
+      name: String,
+      price: Number,
+      size: String,
+      quantity: Number,
+    },
+  ],
+
+  totalAmount: { type: Number, required: true },
+
+  address: {
+    name: String,
+    phone: String,
+    street: String,
+    city: String,
+    pincode: String,
+  },
+
+  status: { type: String, default: "Placed" }, // Placed, Shipped, Delivered
+  createdAt: { type: Date, default: Date.now },
+});
+
+/* ================= Place Order ================= */
+app.post("/api/placeorder", fetchuser, async (req, res) => {
+  try {
+    const { items, totalAmount, address } = req.body;
+
+    if (!items || items.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Cart is empty" });
+    }
+
+    const newOrder = new Order({
+      userId: req.user.id, // ✅ REAL MongoDB ID
+      items,
+      totalAmount,
+      address,
+    });
+
+    await newOrder.save();
+
+    // Clear cart
+    await Users.findByIdAndUpdate(req.user.id, { cartData: {} });
+
+    res.json({
+      success: true,
+      message: "Order placed successfully",
+      orderId: newOrder._id,
+    });
+  } catch (error) {
+    console.error("❌ Order Error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 });
 
 /* ================= Server ================= */
