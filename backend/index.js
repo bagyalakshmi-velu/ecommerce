@@ -20,11 +20,6 @@ mongoose
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.error("❌ MongoDB Error:", err));
 
-  // Serve frontend build
-app.use(express.static(path.join(__dirname, "dist")));
-
-
-/* ================= Test API ================= */
 app.get("/", (req, res) => {
   res.send("Express App is Running");
 });
