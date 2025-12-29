@@ -16,11 +16,11 @@ app.use(cors());
 
 /* ================= MongoDB Connection ================= */
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.error("❌ MongoDB Error:", err));
 
-// Serve frontend build
+// Serve frontend build (make sure your frontend build is at ./dist)
 app.use(express.static(path.join(__dirname, "dist")));
 
 /* ================= Test API ================= */
@@ -30,12 +30,11 @@ app.get("/", (req, res) => {
 
 /* ================= Image Upload ================= */
 const storage = multer.diskStorage({
-  destination: "./upload/images",
+  destination: (req, file, cb) => {
+    cb(null, "./upload/images"); // ensure this folder exists or create it at server start
+  },
   filename: (req, file, cb) => {
-    cb(
-      null,
-      `${file.fieldname}_${Date.now()}${path.extname(file.originalname)}`
-    );
+    cb(null, `${file.fieldname}_${Date.now()}${path.extname(file.originalname)}`);
   },
 });
 
@@ -55,8 +54,8 @@ app.post("/upload", upload.single("product"), (req, res) => {
 });
 
 /* ================= Product Schema ================= */
-const Product = mongoose.model("Product", {
-  id: { type: Number, required: true },
+const Product = mongoose.model("Product", new mongoose.Schema({
+  id: { type: Number, required: true, unique: true },
   name: { type: String, required: true },
   image: { type: String, required: true },
   category: { type: String, required: true },
@@ -64,7 +63,7 @@ const Product = mongoose.model("Product", {
   old_price: { type: Number, required: true },
   available: { type: Boolean, default: true },
   date: { type: Date, default: Date.now },
-});
+}));
 
 /* ================= Add Product ================= */
 app.post("/addproduct", async (req, res) => {
@@ -93,79 +92,104 @@ app.post("/addproduct", async (req, res) => {
 
 /* ================= Remove Product ================= */
 app.post("/removeproduct", async (req, res) => {
-  await Product.findOneAndDelete({ id: req.body.id });
-  res.json({ success: true });
+  try {
+    await Product.findOneAndDelete({ id: req.body.id });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 /* ================= Get All Products ================= */
 app.get("/allproducts", async (req, res) => {
-  const products = await Product.find({});
-  res.json(products);
+  try {
+    const products = await Product.find({});
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 /* ================= User Schema ================= */
-const Users = mongoose.model("Users", {
+const Users = mongoose.model("Users", new mongoose.Schema({
   name: String,
-  email: { type: String, unique: true },
+  email: { type: String, unique: true, required: true },
   password: String,
-  cartData: Object,
+  cartData: { type: Map, of: Number, default: {} }, // safer to use Map for cart
   date: { type: Date, default: Date.now },
-});
+}));
 
 /* ================= Signup ================= */
 app.post("/signup", async (req, res) => {
-  const check = await Users.findOne({ email: req.body.email });
-  if (check) {
-    return res
-      .status(400)
-      .json({ success: false, errors: "User already exists" });
+  try {
+    const check = await Users.findOne({ email: req.body.email });
+    if (check) {
+      return res.status(400).json({ success: false, errors: "User already exists" });
+    }
+
+    // Initialize cart with 0 for items 0 to 299
+    let cart = {};
+    for (let i = 0; i < 300; i++) cart[i] = 0;
+
+    const user = new Users({
+      name: req.body.username,
+      email: req.body.email,
+      password: req.body.password,
+      cartData: cart,
+    });
+
+    await user.save();
+
+    const token = jwt.sign({ user: { id: user._id } }, process.env.JWT_SECRET);
+    res.json({ success: true, token });
+  } catch (error) {
+    console.error("❌ Signup Error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
-
-  let cart = {};
-  for (let i = 0; i < 300; i++) cart[i] = 0;
-
-  const user = new Users({
-    name: req.body.username,
-    email: req.body.email,
-    password: req.body.password,
-    cartData: cart,
-  });
-
-  await user.save();
-
-  const token = jwt.sign({ user: { id: user._id } }, process.env.JWT_SECRET);
-  res.json({ success: true, token });
 });
 
 /* ================= Login ================= */
 app.post("/login", async (req, res) => {
-  const user = await Users.findOne({ email: req.body.email });
-  if (!user) {
-    return res.json({ success: false, errors: "Wrong Email" });
-  }
+  try {
+    const user = await Users.findOne({ email: req.body.email });
+    if (!user) {
+      return res.json({ success: false, errors: "Wrong Email" });
+    }
 
-  if (req.body.password !== user.password) {
-    return res.json({ success: false, errors: "Wrong Password" });
-  }
+    if (req.body.password !== user.password) {
+      return res.json({ success: false, errors: "Wrong Password" });
+    }
 
-  const token = jwt.sign({ user: { id: user._id } }, process.env.JWT_SECRET);
-  res.json({ success: true, token });
+    const token = jwt.sign({ user: { id: user._id } }, process.env.JWT_SECRET);
+    res.json({ success: true, token });
+  } catch (error) {
+    console.error("❌ Login Error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 /* ================= New Collections ================= */
 app.get("/newcollections", async (req, res) => {
-  const products = await Product.find().sort({ date: -1 }).limit(8);
-  res.json(products);
+  try {
+    const products = await Product.find().sort({ date: -1 }).limit(8);
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 /* ================= Popular in Women ================= */
 app.get("/popularinwomen", async (req, res) => {
-  const products = await Product.find({ category: "women" }).limit(4);
-  res.json(products);
+  try {
+    const products = await Product.find({ category: "women" }).limit(4);
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // Middleware to fetch user from token
-const fetchuser = async (req, res, next) => {
+const fetchuser = (req, res, next) => {
   const token = req.header("auth-token");
   if (!token) {
     return res.status(401).send({ errors: "Please authenticate using a valid token" });
@@ -175,35 +199,48 @@ const fetchuser = async (req, res, next) => {
     req.user = data.user;
     next();
   } catch (error) {
-    res.status(401).send({ errors: "Please authenticate using a valid token" });
+    return res.status(401).send({ errors: "Please authenticate using a valid token" });
   }
 };
 
 /*==================Add in cart data =============== */
 app.post('/addtocart', fetchuser, async (req, res) => {
-  console.log("Add Cart", req.body.itemId);
-  let userData = await Users.findOne({ _id: req.user.id });
-  userData.cartData[req.body.itemId] += 1;
-  await Users.findOneAndUpdate({ _id: req.user.id }, { cartData: userData.cartData });
-  res.send("Added");
-});
-
-// Create an endpoint for removing the product in cart
-app.post('/removefromcart', fetchuser, async (req, res) => {
-  console.log("Remove Cart", req.body.itemId);
-  let userData = await Users.findOne({ _id: req.user.id });
-  if (userData.cartData[req.body.itemId] != 0) {
-    userData.cartData[req.body.itemId] -= 1;
+  try {
+    console.log("Add Cart", req.body.itemId);
+    let userData = await Users.findById(req.user.id);
+    if (!userData.cartData) userData.cartData = {};
+    userData.cartData[req.body.itemId] = (userData.cartData[req.body.itemId] || 0) + 1;
+    await userData.save();
+    res.send("Added");
+  } catch (error) {
+    res.status(500).send("Error adding to cart");
   }
-  await Users.findOneAndUpdate({ _id: req.user.id }, { cartData: userData.cartData });
-  res.send("Removed");
 });
 
-// Create an endpoint for getting cartdata of user
+// Remove from cart
+app.post('/removefromcart', fetchuser, async (req, res) => {
+  try {
+    console.log("Remove Cart", req.body.itemId);
+    let userData = await Users.findById(req.user.id);
+    if (userData.cartData && userData.cartData[req.body.itemId] > 0) {
+      userData.cartData[req.body.itemId] -= 1;
+      await userData.save();
+    }
+    res.send("Removed");
+  } catch (error) {
+    res.status(500).send("Error removing from cart");
+  }
+});
+
+// Get cart data
 app.post('/getcart', fetchuser, async (req, res) => {
-  console.log("Get Cart");
-  let userData = await Users.findOne({ _id: req.user.id });
-  res.json(userData.cartData);
+  try {
+    console.log("Get Cart");
+    let userData = await Users.findById(req.user.id);
+    res.json(userData.cartData || {});
+  } catch (error) {
+    res.status(500).send("Error fetching cart");
+  }
 });
 
 // Update product
@@ -221,7 +258,7 @@ app.post("/updateproduct", async (req, res) => {
     );
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -234,12 +271,12 @@ app.get("/product/:id", async (req, res) => {
     }
     res.json(product);
   } catch (err) {
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 /* ================= Order Schema ================= */
-const Order = mongoose.model("Order", {
+const Order = mongoose.model("Order", new mongoose.Schema({
   userId: { type: String, required: true },
 
   items: [
@@ -264,7 +301,7 @@ const Order = mongoose.model("Order", {
 
   status: { type: String, default: "Placed" }, // Placed, Shipped, Delivered
   createdAt: { type: Date, default: Date.now },
-});
+}));
 
 /* ================= Place Order ================= */
 app.post("/api/placeorder", fetchuser, async (req, res) => {
@@ -272,13 +309,11 @@ app.post("/api/placeorder", fetchuser, async (req, res) => {
     const { items, totalAmount, address } = req.body;
 
     if (!items || items.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Cart is empty" });
+      return res.status(400).json({ success: false, message: "Cart is empty" });
     }
 
     const newOrder = new Order({
-      userId: req.user.id, // ✅ REAL MongoDB ID
+      userId: req.user.id, // MongoDB ObjectId string
       items,
       totalAmount,
       address,
@@ -286,7 +321,7 @@ app.post("/api/placeorder", fetchuser, async (req, res) => {
 
     await newOrder.save();
 
-    // Clear cart
+    // Clear cart after order
     await Users.findByIdAndUpdate(req.user.id, { cartData: {} });
 
     res.json({
@@ -296,10 +331,7 @@ app.post("/api/placeorder", fetchuser, async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Order Error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
