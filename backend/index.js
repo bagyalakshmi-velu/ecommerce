@@ -1,3 +1,5 @@
+require('dotenv').config(); // Load environment variables from .env
+
 const express = require("express");
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
@@ -18,9 +20,8 @@ mongoose
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.error("❌ MongoDB Error:", err));
 
-  // Serve frontend build
+// Serve frontend build
 app.use(express.static(path.join(__dirname, "dist")));
-
 
 /* ================= Test API ================= */
 app.get("/", (req, res) => {
@@ -132,7 +133,7 @@ app.post("/signup", async (req, res) => {
 
   await user.save();
 
-  const token = jwt.sign({ user: { id: user._id } }, "secret_ecom");
+  const token = jwt.sign({ user: { id: user._id } }, process.env.JWT_SECRET);
   res.json({ success: true, token });
 });
 
@@ -147,7 +148,7 @@ app.post("/login", async (req, res) => {
     return res.json({ success: false, errors: "Wrong Password" });
   }
 
-  const token = jwt.sign({ user: { id: user._id } }, "secret_ecom");
+  const token = jwt.sign({ user: { id: user._id } }, process.env.JWT_SECRET);
   res.json({ success: true, token });
 });
 
@@ -163,14 +164,14 @@ app.get("/popularinwomen", async (req, res) => {
   res.json(products);
 });
 
- //MiddleWare to fetch user from token
+// Middleware to fetch user from token
 const fetchuser = async (req, res, next) => {
   const token = req.header("auth-token");
   if (!token) {
-    res.status(401).send({ errors: "Please authenticate using a valid token" });
+    return res.status(401).send({ errors: "Please authenticate using a valid token" });
   }
   try {
-    const data = jwt.verify(token, "secret_ecom");
+    const data = jwt.verify(token, process.env.JWT_SECRET);
     req.user = data.user;
     next();
   } catch (error) {
@@ -178,39 +179,34 @@ const fetchuser = async (req, res, next) => {
   }
 };
 
-
 /*==================Add in cart data =============== */
 app.post('/addtocart', fetchuser, async (req, res) => {
-  console.log("Add Cart",req.body.itemId);
+  console.log("Add Cart", req.body.itemId);
   let userData = await Users.findOne({ _id: req.user.id });
   userData.cartData[req.body.itemId] += 1;
   await Users.findOneAndUpdate({ _id: req.user.id }, { cartData: userData.cartData });
-  res.send("Added")
-})
-
+  res.send("Added");
+});
 
 // Create an endpoint for removing the product in cart
 app.post('/removefromcart', fetchuser, async (req, res) => {
-  console.log("Remove Cart",req.body.itemId);
+  console.log("Remove Cart", req.body.itemId);
   let userData = await Users.findOne({ _id: req.user.id });
   if (userData.cartData[req.body.itemId] != 0) {
     userData.cartData[req.body.itemId] -= 1;
   }
   await Users.findOneAndUpdate({ _id: req.user.id }, { cartData: userData.cartData });
   res.send("Removed");
-})
+});
 
-
-//Create an endpoint for getting cartdata of user
+// Create an endpoint for getting cartdata of user
 app.post('/getcart', fetchuser, async (req, res) => {
   console.log("Get Cart");
   let userData = await Users.findOne({ _id: req.user.id });
   res.json(userData.cartData);
+});
 
-})
-
-//update
-
+// Update product
 app.post("/updateproduct", async (req, res) => {
   try {
     await Product.findOneAndUpdate(
@@ -229,8 +225,7 @@ app.post("/updateproduct", async (req, res) => {
   }
 });
 
-//get single product
-
+// Get single product
 app.get("/product/:id", async (req, res) => {
   try {
     const product = await Product.findOne({ id: Number(req.params.id) });
@@ -242,8 +237,6 @@ app.get("/product/:id", async (req, res) => {
     res.status(500).json({ success: false });
   }
 });
-
-
 
 /* ================= Order Schema ================= */
 const Order = mongoose.model("Order", {
