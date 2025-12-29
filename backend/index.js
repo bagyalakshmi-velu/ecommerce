@@ -24,17 +24,7 @@ app.get("/", (req, res) => {
   res.send("Express App is Running");
 });
 
-/* ================= Image Upload (FIXED) ================= */
-const storage = multer.diskStorage({
-  destination: "./upload/images",
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}_${file.originalname}`);
-  },
-});
 
-const upload = multer({ storage });
-
-app.use("/images", express.static("upload/images"));
 
 app.post("/upload", upload.single("product"), (req, res) => {
   if (!req.file) {
